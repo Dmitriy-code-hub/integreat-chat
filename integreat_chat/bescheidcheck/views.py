@@ -54,6 +54,7 @@ ALLOWED_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".heic")
 ALLOWED_PDF_EXT = ".pdf"
 
 FALLBACK_LANGUAGE = "de"
+ANALYSIS_STAGE_COUNT = 4
 
 
 def _content_security_policy(nonce: str) -> str:
@@ -306,9 +307,9 @@ def sse_event(event: str, data: dict) -> str:
 
 def _stage_event(payload: dict) -> str:
     """
-    Convenience wrapper for stage-progress events.
+    Encode stage progress with the total for this backend pipeline.
     """
-    return sse_event("stage", payload)
+    return sse_event("stage", {**payload, "total": ANALYSIS_STAGE_COUNT})
 
 
 async def _analyze_stream(

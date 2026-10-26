@@ -8,8 +8,11 @@ response shape, and the validation rules.
 
 import asyncio
 import json
+import shutil
+import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from django.test import TestCase
@@ -996,7 +999,24 @@ class AnalyzeEndpointTest(TestCase):
         self.assertIn("stages", body)
         # Stage progress events must have streamed before the result.
         stage_events = [e for e in events if e["event"] == "stage"]
-        self.assertGreaterEqual(len(stage_events), 8)  # 4 stages x started + done
+        expected_stages = ["ocr", "translate", "classify", "extraction"]
+        self.assertEqual(
+            [
+                (
+                    event["data"]["stage"],
+                    event["data"]["index"],
+                    event["data"]["total"],
+                    event["data"]["status"],
+                )
+                for event in stage_events
+            ],
+            [
+                (stage, index, len(expected_stages), status)
+                for index, stage in enumerate(expected_stages, start=1)
+                for status in ("started", "done")
+            ],
+        )
+        self.assertEqual(set(body["stages"]), set(expected_stages))
         extraction_events = [
             e["data"] for e in stage_events if e["data"]["stage"] == "extraction"
         ]
@@ -2272,6 +2292,21 @@ class AnalyzeSseSanitizationTest(TestCase):
             # And the translated paragraph's new text must be present —
             # the front end shows it in black (not grey).
             self.assertIn("Hello", page["translated_html"])
+
+
+class ProgressBarTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Node.js is needed for frontend tests")
+    def test_progress_bar_uses_backend_stage_totals(self):
+        """Run the actual template's progress logic and SSE handler."""
+        root = Path(__file__).resolve().parents[2]
+        result = subprocess.run(
+            ["node", "--test", "tests/bescheidcheck_progress.test.cjs"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 class StructuredExtractionTest(unittest.TestCase):

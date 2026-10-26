@@ -554,7 +554,7 @@
             <h2 id="resultTitle">Result</h2>
             <div class="muted" id="resultSubtitle"></div>
             <div id="progressBar" class="progress-bar" role="progressbar"
-                 aria-valuemin="0" aria-valuemax="3" aria-valuenow="0" hidden>
+                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
                 <div id="progressBarFill" class="progress-bar-fill"></div>
             </div>
             <span id="progressBarLabel" class="progress-bar-label muted" hidden></span>
@@ -1205,8 +1205,10 @@
         ocr: "Reading & OCR",
         classify: "Classifying",
         translate: "Translating",
+        extraction: "Extracting data",
+        counseling: "Finding a counseling option",
     };
-    const TOTAL_STAGES = 3;
+    let currentStageCounter = "";
 
     const translationProgress = { done: 0, total: 0, translated: new Set() };
 
@@ -1218,27 +1220,37 @@
 
     function updateTranslateTicker() {
         if (translationProgress.total === 0) return;
-        const label =
-            `Translating…` + " · " +
-            `${translationProgress.done} of ${translationProgress.total} paragraph(s)`;
+        const bits = ["Translating…"];
+        if (currentStageCounter) bits.push(currentStageCounter);
+        bits.push(`${translationProgress.done} of ${translationProgress.total} paragraph(s)`);
+        const label = bits.join(" · ");
         els.progressBarLabel.hidden = false;
         els.progressBarLabel.textContent = label;
         els.progress.textContent = label;
         els.progress.style.display = "block";
     }
 
-    function setProgress({ index, stage, status, seconds, label }) {
+    function setProgress({ index, total, stage, status, seconds, label }) {
+        const hasIndex = Number.isInteger(index) && index > 0;
+        const hasTotal = hasIndex && Number.isInteger(total) && total >= index;
         const completed = (status === "done" ? index : index - 1);
-        const pct = Math.max(0, Math.min(TOTAL_STAGES, completed)) / TOTAL_STAGES * 100;
+        const pct = hasTotal ? Math.max(0, Math.min(total, completed)) / total * 100 : 0;
+        currentStageCounter = hasIndex
+            ? `stage ${index}${hasTotal ? `/${total}` : ""}`
+            : "";
         els.progressBar.hidden = false;
         els.progressBarFill.style.width = pct + "%";
-        els.progressBar.classList.toggle("indeterminate", status === "started" || status === "progress");
-        els.progressBar.setAttribute("aria-valuenow", String(Math.round(pct)));
+        els.progressBar.classList.toggle("indeterminate", !hasTotal || status === "started" || status === "progress");
+        if (hasTotal) {
+            els.progressBar.setAttribute("aria-valuenow", String(Math.round(pct)));
+        } else {
+            els.progressBar.removeAttribute("aria-valuenow");
+        }
 
         const name = STAGE_NAMES[stage] || stage;
         const bits = [`${name}…`];
         if (status === "started" || status === "progress") {
-            bits.push(`stage ${index}/${TOTAL_STAGES}`);
+            if (currentStageCounter) bits.push(currentStageCounter);
         } else if (status === "done" && seconds != null) {
             bits.push(`done in ~${seconds}s`);
         }
@@ -1255,8 +1267,10 @@
     }
 
     function resetProgressUI() {
+        currentStageCounter = "";
         els.progressBarFill.style.width = "0%";
         els.progressBar.classList.remove("indeterminate");
+        els.progressBar.setAttribute("aria-valuenow", "0");
         els.progressBar.hidden = true;
         els.progressBarLabel.hidden = true;
         els.progress.textContent = "";
@@ -1416,6 +1430,7 @@
                     elapsed = Math.round((performance.now() - started) / 1000);
                     setProgress({
                         index: msg.data.index,
+                        total: msg.data.total,
                         stage: msg.data.stage,
                         status: msg.data.status,
                         seconds: msg.data.seconds,
